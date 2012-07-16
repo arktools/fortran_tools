@@ -12,7 +12,8 @@ class Test(unittest.TestCase):
 
 
     def fixed2free(self):
-        Fixed2Free.from_argv(['', os.path.join('data', 'auxout.f'), 'auxout.f90', '--style'])
+        filename='subryw'
+        Fixed2Free.from_argv(['', os.path.join('data', filename+'.f'), filename+'.f90', '--style'])
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:

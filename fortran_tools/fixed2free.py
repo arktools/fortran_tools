@@ -22,7 +22,6 @@ class Fixed2Free(object):
         self.style=style
         
         #regex's
-        self.re_eol = re.compile('$')
         self.re_line_continuation = re.compile('(^\s\s\s\s\s)([^\s])([\s]*)')
         self.re_hollerith = re.compile('[\s,]((\d+)H)')
         
@@ -45,7 +44,7 @@ class Fixed2Free(object):
         #fix source code
         for i in xrange(len(source)):
             self.remove_new_lines(source, i)
-            self.truncate_extra_lines(source, i)
+            self.truncate_extra_linewidth(source, i)
             self.fix_comments(source,i)
             self.fix_line_continuation(source, i)
             self.fix_exponents(source, i)
@@ -58,13 +57,13 @@ class Fixed2Free(object):
     def remove_new_lines(self,source,i):
         source[i] = re.sub('[\r\n]','', source[i])
         
-    def truncate_extra_lines(self,source,i):
+    def truncate_extra_linewidth(self,source,i):
         if len(source[i]) > 72:
             source[i] = source[i][:72]
             
     def fix_comments(self,source,i):
-        if source[i][0] == 'C':
-            source[i] = re.sub('^C','!', source[i], count=1)
+        if len(source[i]) > 0 and source[i][0] == 'C':
+          source[i] = re.sub('^C','!', source[i], count=1)
             
     def fix_line_continuation(self,source,i):
         continuation_type = self.find_continuation_type(source,i)
@@ -76,10 +75,10 @@ class Fixed2Free(object):
         #debug
         if continuation_type != "generic":
             print "continuation_type:", continuation_type
-            print "source lines: \n",source[i-1],source[i]
+            print "source lines: \n",source[i-1]+'\n',source[i]+'\n'
         
-        #add continuation to last line        
-        source[i-1] = self.re_eol.sub('&\g<0>', source[i-1], count=1)
+        #add continuation to last line
+        source[i-1] = source[i-1] + '&'
         
         #add appropriate continuation to current line
         if continuation_type == "hollerith":
