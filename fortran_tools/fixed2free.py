@@ -121,9 +121,9 @@ class Fixed2Free(object):
             return (line,prev_line)
         
         #debug
-        if continuation_type != "generic":
-            print "continuation_type:", continuation_type
-            print "source lines: \n",prev_line+'\n',line+'\n'
+#        if continuation_type != "generic":
+#            print "continuation_type:", continuation_type
+#            print "source lines: \n",prev_line+'\n',line+'\n'
         
         #add appropriate continuation to current line
         if continuation_type == "hollerith":
