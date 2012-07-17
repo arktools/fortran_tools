@@ -12,6 +12,24 @@ class Fixed2Free(object):
     '''
     This class converts fixed format fortran code to free format.
     '''
+    
+    #misc regex's
+    re_line_continuation = re.compile('^(\s\s\s\s\s)([^\s])([\s]*)')
+    re_hollerith = re.compile('[\s,]((\d+)H)')
+    re_number_spacing = re.compile('([^A-Za-z][\d.]+)[\s]([\d.]+[^A-Za-z])')
+    re_f77_comment = re.compile('^[cC]')
+    re_f90_comment = re.compile('^!')
+    
+    #variable regex
+    re_var_end = re.compile('.*[A-Za-z0-9]+$')
+    re_var_begin = re.compile('(^\s\s\s\s\s)([^\s])([\s]*)([A-Za-z]+[0-9]?)+')
+    
+    #number regex
+    re_number_end = re.compile('.*[\d.eE]+$')
+    re_number_begin = re.compile('(^\s\s\s\s\s)([^\s])([\s]*)[\d.eE]+')
+    
+    #exponent regex
+    re_exponent_old = re.compile('([\d.]E)[\s]([\d]+)')
 
     def __init__(self,input_filename,output_filename,style):
         '''
@@ -21,17 +39,7 @@ class Fixed2Free(object):
         self.output_filename=output_filename
         self.style=style
         
-        #regex's
-        self.re_line_continuation = re.compile('(^\s\s\s\s\s)([^\s])([\s]*)')
-        self.re_hollerith = re.compile('[\s,]((\d+)H)')
-        
-        self.re_var_end = re.compile('.*[A-Za-z0-9]+$')
-        self.re_var_begin = re.compile('(^\s\s\s\s\s)([^\s])([\s]*)([A-Za-z]+[0-9]?)+')
-        
-        self.re_number_end = re.compile('.*[\d.eE]+$')
-        self.re_number_begin = re.compile('(^\s\s\s\s\s)([^\s])([\s]*)[\d.eE]+')
-        
-        self.re_exponent_old = re.compile('([\d.]E)[\s]([\d]+)')
+
         
         self.process()
         
@@ -43,68 +51,116 @@ class Fixed2Free(object):
 
         #fix source code
         for i in xrange(len(source)):
-            self.remove_new_lines(source, i)
-            self.truncate_extra_linewidth(source, i)
-            self.fix_comments(source,i)
-            self.fix_line_continuation(source, i)
-            self.fix_exponents(source, i)
+            line = source[i]
+            line = self.remove_new_line(line)
+            line = self.fix_comment(line)
+            line = self.truncate_extra_linewidth(line)
+            line = self.fix_exponents(line)
+            
+            if self.is_line_continuation(line):
+                prev_line_index = self.find_prev_line(source,i)
+                prev_line = source[prev_line_index]
+                line,prev_line = self.fix_line_continuation(line,prev_line)
+                source[prev_line_index] = prev_line
+            
+            line = self.fix_number_spacing(line)
+            source[i] = line
             
         #write new source
         with open(self.output_filename, 'wb') as f:
             for line in source:
                 f.write(line+'\n')
                         
-    def remove_new_lines(self,source,i):
-        source[i] = re.sub('[\r\n]','', source[i])
+    @staticmethod
+    def is_line_continuation(line):
+        if len(line) > 5 and Fixed2Free.re_line_continuation.match(line):
+            return True
+        return False
+    
+    @staticmethod
+    def find_prev_line(source,i):
+        '''  
+        find first non-commented previous line
+        '''
+        if i>0:
+            for j in range(i-1, -1, -1): # -1 since python uses [i-1,-1)
+                if not Fixed2Free.is_f90_comment(source[j]):
+                    return j
+        return None
         
-    def truncate_extra_linewidth(self,source,i):
-        if len(source[i]) > 72:
-            source[i] = source[i][:72]
+    @staticmethod
+    def remove_new_line(line):
+        return re.sub('[\r\n]','', line)
+        
+    @staticmethod
+    def truncate_extra_linewidth(line):
+        if len(line) > 72:
+            line = line[:72]
+        return line
             
-    def fix_comments(self,source,i):
-        if len(source[i]) > 0 and source[i][0] == 'C':
-          source[i] = re.sub('^C','!', source[i], count=1)
+    @staticmethod
+    def is_f77_comment(line):
+        return Fixed2Free.re_f77_comment.match(line)
+        
+    @staticmethod
+    def is_f90_comment(line):
+        return Fixed2Free.re_f90_comment.match(line)
             
-    def fix_line_continuation(self,source,i):
-        continuation_type = self.find_continuation_type(source,i)
+    @staticmethod
+    def fix_comment(line):
+        if Fixed2Free.is_f77_comment(line):
+            line = re.sub('^[Cc]','!', line, count=1)
+        return line
+            
+    @staticmethod
+    def fix_line_continuation(line,prev_line):
+        continuation_type = Fixed2Free.find_continuation_type(line,prev_line)
         
         #if no line continuation found, return
         if not continuation_type:
-            return
+            return (line,prev_line)
         
         #debug
         if continuation_type != "generic":
             print "continuation_type:", continuation_type
-            print "source lines: \n",source[i-1]+'\n',source[i]+'\n'
-        
-        #add continuation to last line
-        source[i-1] = source[i-1] + '&'
+            print "source lines: \n",prev_line+'\n',line+'\n'
         
         #add appropriate continuation to current line
         if continuation_type == "hollerith":
-            source[i] = self.re_line_continuation.sub('\g<1> &\g<3>', source[i], count=1)
+            line = Fixed2Free.re_line_continuation.sub('\g<1>&\g<3>', line, count=1)
         elif continuation_type == "var" or continuation_type == "number" :
-            source[i] = self.re_line_continuation.sub('\g<1> \g<3>&', source[i], count=1)
+            line = Fixed2Free.re_line_continuation.sub('\g<1>\g<3>&', line, count=1)
         elif continuation_type == "generic":
-            source[i] = self.re_line_continuation.sub('\g<1> &\g<3>', source[i], count=1)
+            line = Fixed2Free.re_line_continuation.sub('\g<1>&\g<3>', line, count=1)
         else:
             raise Exception("unknown continuation type")
         
-    def fix_exponents(self,source,i):
-        source[i] = self.re_exponent_old.sub('\g<1>+\g<2>', source[i])
+        #add line continuation to previous line
+        prev_line = prev_line + '&'
         
-    def find_continuation_type(self,source,i):
+        return (line,prev_line)
+        
+    @staticmethod
+    def fix_exponents(line):
+        return Fixed2Free.re_exponent_old.sub('\g<1>+\g<2>', line)
+    
+    @staticmethod
+    def fix_number_spacing(line):
+        return Fixed2Free.re_number_spacing.sub('\g<1>\g<2>', line)
+        
+    @staticmethod
+    def find_continuation_type(line,prev_line):
         '''
         Finds line continuation type: hollerith, number, or generic
         if not a line continuation, return None
         '''
-        if not (len(source[i]) > 5 and self.re_line_continuation.match(source[i]) and i>0):
+        if not Fixed2Free.is_line_continuation(line):
             return None
         
         # test for hollerith continuation
-        for hollerith in self.re_hollerith.finditer(source[i-1]):
+        for hollerith in Fixed2Free.re_hollerith.finditer(prev_line):
             hollerith_end = hollerith.end(1)+int(hollerith.group(2))+1
-            prev_line_length = len(source[i-1])-1
+            prev_line_length = len(prev_line)-1
             #print "hollerith wrap detected"
             #print "\tline number:", i # note this is prev line number (i-1)+1 since starts at 0
             #print "\tline length:", prev_line_length
@@ -117,11 +173,11 @@ class Fixed2Free(object):
                 return "hollerith"
                 
         #var continuation
-        if self.re_var_begin.match(source[i]) and self.re_var_end.match(source[i-1]):
+        if Fixed2Free.re_var_begin.match(line) and Fixed2Free.re_var_end.match(prev_line):
             return "var"
         
         #number continuation
-        if self.re_number_begin.match(source[i]) and self.re_number_end.match(source[i-1]):
+        if Fixed2Free.re_number_begin.match(line) and Fixed2Free.re_number_end.match(prev_line):
             return "number"
         
         return "generic"

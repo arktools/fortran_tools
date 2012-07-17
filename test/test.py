@@ -12,7 +12,7 @@ class Test(unittest.TestCase):
 
 
     def fixed2free(self):
-        filename='subryw'
+        filename='outpt2'
         Fixed2Free.from_argv(['', os.path.join('data', filename+'.f'), filename+'.f90', '--style'])
 
 if __name__ == "__main__":
