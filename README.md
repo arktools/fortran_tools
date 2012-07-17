@@ -1,4 +1,4 @@
-#fortran_tools: pythons tools for updating old fortran code
+#fortran_tools: Python tools for updating old Fortran code
 
 ## License
 
